@@ -1,10 +1,13 @@
-﻿using System.CommandLine;
+﻿//fib bundle -o file.txt -a author -l "js html" -r -n -s type
+
+using System.CommandLine;
 
 var rootCommand = new RootCommand("Root command for File Bundler CLI");
 
 #region bundle
 
 var bundleCommand = new Command("bundle", "Bundle code files to a single file");
+
 var outputOption = new Option<FileInfo>(new string[] { "--output", "-o" }, "file fath and name");
 var authorOption = new Option<string>(new string[] { "--author", "-a" }, "author name");
 var languagesOption = new Option<string>(new string[] { "--languages", "-l" }, "languages of the desired files");
@@ -35,7 +38,6 @@ bundleCommand.SetHandler((output, author, languages, removeEmptyLines, includeNo
     {
         using (FileStream file = File.Create(output.FullName))
         {
-            Console.WriteLine("File was created!");
 
             using (StreamWriter writer = new StreamWriter(file))
             {
@@ -48,46 +50,36 @@ bundleCommand.SetHandler((output, author, languages, removeEmptyLines, includeNo
                 string[] files = Directory.GetFiles(Directory.GetCurrentDirectory(), "*", SearchOption.AllDirectories);
 
                 string[] excludedFolders = { "bin", "debug", "obj", ".vs", ".config", ".vscode", ".git", "build" };
-                string[] excludedExtensions = { ".csproj", ".json", ".dockerignore", ".csproj.user" };
+                string[] excludedExtensions = { ".csproj", ".json", ".dockerignore", ".csproj.user", ".txt", ".rsp", ".png", ".gif", ".jpg" };
                 string[] excludedFileNames = { "Dockerfile" };
 
                 files = files.Where(file =>
-                    !excludedFolders.Any(folder => Path.GetDirectoryName(file).Contains(folder))
-                    && !excludedExtensions.Contains(Path.GetExtension(file))
-                    && !excludedFileNames.Contains(Path.GetFileName(file))).ToArray();
+                        !excludedFolders.Any(folder => Path.GetDirectoryName(file).Contains(folder))
+                        && !excludedExtensions.Contains(Path.GetExtension(file))
+                        && !excludedFileNames.Contains(Path.GetFileName(file))).ToArray();
 
-                if (sort == "type")
-                {
-                    files = files.OrderBy(f => Path.GetExtension(f)).ToArray();
-                }
-                else
-                {
-                    files = files.OrderBy(f => Path.GetFileName(f)).ToArray();
-                }
+                files = (sort == "type") ?
+                        files.OrderBy(f => Path.GetExtension(f)).ToArray() :
+                        files.OrderBy(f => Path.GetFileName(f)).ToArray();
 
                 foreach (string filePath in files)
                 {
-                    if (filePath != output.FullName)
+                    string fileName = Path.GetFileName(filePath);
+                    string fileContent = File.ReadAllText(filePath);
+                    if (languages == "all")
                     {
-                        string fileName = Path.GetFileName(filePath);
-                        string fileContent = File.ReadAllText(filePath);
-                        if (languages == "all")
-                        {
+                        WriteFileContents(writer, fileName, fileContent, removeEmptyLines, includeNote, filePath);
+                    }
+                    else
+                    {
+                        string fileExtension = Path.GetExtension(filePath).TrimStart('.');
+                        if (languages.Split(' ').Contains(fileExtension))
                             WriteFileContents(writer, fileName, fileContent, removeEmptyLines, includeNote, filePath);
-                        }
-                        else
-                        {
-                            string fileExtension = Path.GetExtension(filePath).TrimStart('.');
-
-                            if (IsLanguageMatch(fileContent, fileExtension, languages))
-                            {
-                                WriteFileContents(writer, fileName, fileContent, removeEmptyLines, includeNote, filePath);
-                            }
-                        }
                     }
                 }
             }
         }
+        Console.WriteLine("File was created!");
     }
     catch (DirectoryNotFoundException)
     {
@@ -97,7 +89,6 @@ bundleCommand.SetHandler((output, author, languages, removeEmptyLines, includeNo
     {
         Console.WriteLine(ex.Message);
     }
-
 }, outputOption, authorOption, languagesOption, removeEmptyLinesOption, includeNoteOption, sortOption);
 
 void WriteFileContents(StreamWriter writer, string fileName, string fileContent, bool removeEmptyLines, bool includeNote, string filePath)
@@ -136,32 +127,6 @@ string GetRelativeFilePath(string filePath)
     return $"###Source: {fileName} (Relative Path: {relativePath})###";
 }
 
-bool IsLanguageMatch(string fileContent, string fileExtension, string targetLanguages)
-{
-    string[] languages;
-    if (targetLanguages.Contains(" "))
-    {
-        languages = targetLanguages.Split(' ');
-    }
-    else if (targetLanguages.Contains(","))
-    {
-        languages = targetLanguages.Split(',');
-    }
-    else
-    {
-        languages = new string[] { targetLanguages };
-    }
-
-    foreach (string language in languages)
-    {
-        if (string.Equals(fileExtension, language.Trim(), StringComparison.OrdinalIgnoreCase))
-        {
-            return true;
-        }
-    }
-    return false;
-}
-
 rootCommand.AddCommand(bundleCommand);
 
 #endregion
@@ -188,7 +153,7 @@ createRspCommand.SetHandler(() =>
     string? languagesOption;
     do
     {
-        Console.Write("Enter languages option value (separated by commas or spaces). If you want to include everything, enter \"all\": ");
+        Console.Write("Enter languages option value (separated by spaces). If you want to include everything, enter \"all\": ");
         languagesOption = Console.ReadLine();
     } while (string.IsNullOrEmpty(languagesOption));
 
