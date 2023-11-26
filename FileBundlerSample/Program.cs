@@ -8,7 +8,7 @@ var rootCommand = new RootCommand("Root command for File Bundler CLI");
 
 var bundleCommand = new Command("bundle", "Bundle code files to a single file");
 
-var outputOption = new Option<FileInfo>(new string[] { "--output", "-o" }, "file fath and name");
+var outputOption = new Option<FileInfo>(new string[] { "--output", "-o" }, "file path and name");
 var authorOption = new Option<string>(new string[] { "--author", "-a" }, "author name");
 var languagesOption = new Option<string>(new string[] { "--languages", "-l" }, "languages of the desired files");
 var removeEmptyLinesOption = new Option<bool>(new string[] { "--remove-empty-lines", "-r" }, "delete empty lines from the files");
@@ -26,12 +26,17 @@ bundleCommand.SetHandler((output, author, languages, removeEmptyLines, includeNo
 {
     if (output == null)
     {
-        Console.WriteLine("Error: output option is required!");
+        Console.WriteLine("Error: Output option is required!");
         return;
     }
     if (languages == null)
     {
-        Console.WriteLine("Error: languages option is required!");
+        Console.WriteLine("Error: Languages option is required!");
+        return;
+    }
+    if (sort != null && sort != "type" && sort != "name")
+    {
+        Console.WriteLine("Error: The sort value is invalid!");
         return;
     }
     try
