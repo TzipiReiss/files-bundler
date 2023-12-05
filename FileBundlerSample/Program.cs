@@ -11,125 +11,161 @@ var bundleCommand = new Command("bundle", "Bundle code files to a single file");
 var outputOption = new Option<FileInfo>(new string[] { "--output", "-o" }, "file path and name");
 var authorOption = new Option<string>(new string[] { "--author", "-a" }, "author name");
 var languagesOption = new Option<string>(new string[] { "--languages", "-l" }, "languages of the desired files");
+var sortOption = new Option<string>(new string[] { "--sort", "-s" }, "sort by type or by name");
 var removeEmptyLinesOption = new Option<bool>(new string[] { "--remove-empty-lines", "-r" }, "delete empty lines from the files");
 var includeNoteOption = new Option<bool>(new string[] { "--note", "-n" }, "specify the source of the code");
-var sortOption = new Option<string>(new string[] { "--sort", "-s" }, "sort by type or by name");
 
 bundleCommand.AddOption(outputOption);
 bundleCommand.AddOption(authorOption);
 bundleCommand.AddOption(languagesOption);
+bundleCommand.AddOption(sortOption);
 bundleCommand.AddOption(removeEmptyLinesOption);
 bundleCommand.AddOption(includeNoteOption);
-bundleCommand.AddOption(sortOption);
 
-bundleCommand.SetHandler((output, author, languages, removeEmptyLines, includeNote, sort) =>
+bundleCommand.SetHandler((output, author, languages, sort, removeEmptyLines, includeNote) =>
+{
+    if (!IsValidInputs(output, languages, sort))
+        return;
+    CreateFile(output, author, languages, sort, removeEmptyLines, includeNote);
+
+}, outputOption, authorOption, languagesOption, sortOption, removeEmptyLinesOption, includeNoteOption);
+
+bool IsValidInputs(FileInfo output, string languages, string sort)
 {
     if (output == null)
     {
         Console.WriteLine("Error: Output option is required!");
-        return;
+        return false;
     }
-    if (languages == null)
+    if (string.IsNullOrEmpty(languages))
     {
         Console.WriteLine("Error: Languages option is required!");
-        return;
+        return false;
     }
-    if (sort != null && sort != "type" && sort != "name")
+    if (!string.IsNullOrEmpty(sort) && sort != "type" && sort != "name")
     {
         Console.WriteLine("Error: The sort value is invalid!");
-        return;
+        return false;
     }
+    return true;
+}
+
+void CreateFile(FileInfo output, string author, string languages, string sort, bool removeEmptyLines, bool includeNote)
+{
     try
     {
-        using (FileStream file = File.Create(output.FullName))
+        using (StreamWriter outputFile = new StreamWriter(output.FullName))
         {
+            WriteOutputHeader(outputFile, output, author);
 
-            using (StreamWriter writer = new StreamWriter(file))
-            {
-                writer.WriteLine($"output:\n'{output.FullName}'\n");
-                if (author != null)
-                    writer.WriteLine($"author: {author}\n");
+            string[] files = SortFiles(FilterFiles(languages), sort);
 
-                writer.WriteLine("-------------------------------------------");
-
-                string[] files = Directory.GetFiles(Directory.GetCurrentDirectory(), "*", SearchOption.AllDirectories);
-
-                string[] excludedFolders = { "bin", "debug", "obj", ".vs", ".config", ".vscode", ".git", "build" };
-                string[] excludedExtensions = { ".csproj", ".json", ".dockerignore", ".csproj.user", ".txt", ".rsp", ".png", ".gif", ".jpg" };
-                string[] excludedFileNames = { "Dockerfile" };
-
-                files = files.Where(file =>
-                        !excludedFolders.Any(folder => Path.GetDirectoryName(file).Contains(folder))
-                        && !excludedExtensions.Contains(Path.GetExtension(file))
-                        && !excludedFileNames.Contains(Path.GetFileName(file))).ToArray();
-
-                files = (sort == "type") ?
-                        files.OrderBy(f => Path.GetExtension(f)).ToArray() :
-                        files.OrderBy(f => Path.GetFileName(f)).ToArray();
-
-                foreach (string filePath in files)
-                {
-                    string fileName = Path.GetFileName(filePath);
-                    string fileContent = File.ReadAllText(filePath);
-                    if (languages == "all")
-                    {
-                        WriteFileContents(writer, fileName, fileContent, removeEmptyLines, includeNote, filePath);
-                    }
-                    else
-                    {
-                        string fileExtension = Path.GetExtension(filePath).TrimStart('.');
-                        if (languages.Split(' ').Contains(fileExtension))
-                            WriteFileContents(writer, fileName, fileContent, removeEmptyLines, includeNote, filePath);
-                    }
-                }
-            }
+            CopyFilesContents(outputFile, files, removeEmptyLines, includeNote);
         }
-        Console.WriteLine("File was created!");
+
+        Console.WriteLine("File was created successfully!");
     }
     catch (DirectoryNotFoundException)
     {
-        Console.WriteLine("Error: File fath is invalid");
+        Console.WriteLine("Error: File path is invalid");
     }
-    catch (Exception ex)
-    {
-        Console.WriteLine(ex.Message);
-    }
-}, outputOption, authorOption, languagesOption, removeEmptyLinesOption, includeNoteOption, sortOption);
+}
 
-void WriteFileContents(StreamWriter writer, string fileName, string fileContent, bool removeEmptyLines, bool includeNote, string filePath)
+void WriteOutputHeader(StreamWriter outputFile, FileInfo output, string author)
 {
-    writer.WriteLine("File Name: " + fileName);
-    writer.WriteLine("File Content:");
+    outputFile.WriteLine($"output: '{output.FullName}'");
+
+    if (author != null)
+        outputFile.WriteLine($"author: {author}");
+
+    outputFile.WriteLine("-------------------------------------------");
+}
+
+string[] FilterFiles(string languages)
+{
+    string[] files;
+    files = FilterRelevantFiles(Directory.GetFiles(Directory.GetCurrentDirectory(), "*", SearchOption.AllDirectories));
+    files = FilterByLanguages(files, languages);
+    return files;
+}
+
+string[] FilterRelevantFiles(string[] files)
+{
+    string[] excludedFolders = { "bin", "debug", "obj", ".vs", ".config", ".vscode", ".git", "Properties", "packages", "build", "out", ".idea" };
+    string[] excludedExtensions = { ".config", ".csproj", ".json", ".dockerignore", ".db", ".user", ".gitignore", ".sln", ".txt", ".rsp", ".png", ".gif", ".jpg", ".mp4", ".iml" };
+    string[] excludedFileNames = { "Dockerfile" };
+
+    files = files.Where(file =>
+                        !excludedFolders.Any(folder => Path.GetDirectoryName(file).Contains(folder))
+                        && !excludedExtensions.Contains(Path.GetExtension(file))
+                        && !excludedFileNames.Contains(Path.GetFileName(file))
+                        ).ToArray();
+    return files;
+}
+
+string[] FilterByLanguages(string[] files, string languages)
+{
+    if (languages == "all")
+        return files;
+
+    string[] filteredFiles = files.Where(filePath =>
+                                         languages.Split(' ')
+                                         .Contains(Path.GetExtension(filePath).TrimStart('.'))
+                                         ).ToArray();
+    return filteredFiles;
+}
+
+string[] SortFiles(string[] files, string sort)
+{
+    if (sort == "type")
+        return files.OrderBy(f => Path.GetExtension(f)).ToArray();
+
+    return files.OrderBy(f => Path.GetFileName(f)).ToArray();
+}
+
+void CopyFilesContents(StreamWriter outputFile, string[] files, bool removeEmptyLines, bool includeNote)
+{
+    foreach (string filePath in files)
+    {
+        WriteFileContents(outputFile, filePath, removeEmptyLines, includeNote);
+        outputFile.WriteLine("-------------------------------------------");
+    }
+}
+
+void WriteFileContents(StreamWriter outputFile, string filePath, bool removeEmptyLines, bool includeNote)
+{
+    string fileName = Path.GetFileName(filePath);
+    string fileContent = File.ReadAllText(filePath);
+
+    outputFile.WriteLine("File Name: " + fileName);
+
+    WriteContent(outputFile, fileContent, removeEmptyLines);
+
+    if (includeNote)
+        outputFile.WriteLine(GetRelativeFilePath(filePath));
+}
+
+void WriteContent(StreamWriter outputFile, string fileContent, bool removeEmptyLines)
+{
+    outputFile.WriteLine("File Content:");
 
     if (removeEmptyLines)
     {
         string[] lines = fileContent.Split(Environment.NewLine, StringSplitOptions.RemoveEmptyEntries);
         foreach (string line in lines)
         {
-            writer.WriteLine(line);
+            outputFile.WriteLine(line);
         }
     }
     else
-    {
-        writer.WriteLine(fileContent);
-    }
-
-    if (includeNote)
-    {
-        writer.WriteLine(GetRelativeFilePath(filePath));
-    }
-    writer.WriteLine("-------------------------------------------");
+        outputFile.WriteLine(fileContent);
 }
 
 string GetRelativeFilePath(string filePath)
 {
-    string currentDirectory = Directory.GetCurrentDirectory();
-    Uri currentUri = new Uri(currentDirectory + Path.DirectorySeparatorChar);
-    Uri fileUri = new Uri(filePath);
-    Uri relativeUri = currentUri.MakeRelativeUri(fileUri);
-    string relativePath = Uri.UnescapeDataString(relativeUri.ToString());
+    string relativePath = Path.GetRelativePath(Directory.GetCurrentDirectory(), filePath);
     string fileName = Path.GetFileName(filePath);
-    return $"###Source: {fileName} (Relative Path: {relativePath})###";
+    return $"#Source: {fileName} (Relative Path: {relativePath})#";
 }
 
 rootCommand.AddCommand(bundleCommand);
@@ -143,7 +179,6 @@ var createRspCommand = new Command("create-rsp", "");
 createRspCommand.SetHandler(() =>
 {
     Console.WriteLine("Creating response file...");
-    string? input;
 
     string? outputOption;
     do
@@ -162,6 +197,8 @@ createRspCommand.SetHandler(() =>
         languagesOption = Console.ReadLine();
     } while (string.IsNullOrEmpty(languagesOption));
 
+    string? input;
+
     Console.Write("Enter remove empty lines option value (true/false): ");
     input = Console.ReadLine();
     bool removeEmptyLinesOption = string.IsNullOrEmpty(input) ? false : bool.Parse(input);
@@ -176,18 +213,18 @@ createRspCommand.SetHandler(() =>
 
     using (StreamWriter file = new StreamWriter("responseFile.rsp"))
     {
-        file.WriteLine($"--output {outputOption}");
+        file.WriteLine($"-o {outputOption}");
         if (!string.IsNullOrEmpty(authorOption))
-            file.WriteLine($"--author \"{authorOption}\"");
-        file.WriteLine($"--languages \"{languagesOption}\"");
+            file.WriteLine($"-a \"{authorOption}\"");
+        file.WriteLine($"-l \"{languagesOption}\"");
         if (removeEmptyLinesOption)
-            file.WriteLine("--remove-empty-lines");
+            file.WriteLine("-r");
         if (includeNoteOption)
-            file.WriteLine("--note");
+            file.WriteLine("-n");
         if (!string.IsNullOrEmpty(sortOption))
-            file.WriteLine($"--sort {sortOption}");
+            file.WriteLine($"-s {sortOption}");
     }
-    Console.WriteLine("Response file created successfully.");
+    Console.WriteLine("Response file was created successfully!");
 });
 
 rootCommand.AddCommand(createRspCommand);
